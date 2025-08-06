@@ -1,6 +1,8 @@
 /*
 * 
-* When using Find, highlight all matches.
+* When using Find:
+* 1. Highlight all matches.
+* 2. Show an indicator when results wrap back to the beginning/end of the document.
 * 
 */
 
@@ -98,10 +100,70 @@ static NSTimer *debounceTimer = nil;
 static BOOL isAnimatingOut = NO;
 
 - (void)findButtons:(BOOL)forward {
+    CHTextView *textView = (CHTextView *)[self textView];
+    NSRange oldSelectedRange = [textView selectedRange];
+    
+    // Find current match index
+    NSInteger oldMatchIndex = -1;
+    for (NSInteger i = 0; i < [currentHighlightRanges count]; i++) {
+        if (NSEqualRanges([[currentHighlightRanges objectAtIndex:i] rangeValue], oldSelectedRange)) {
+            oldMatchIndex = i;
+            break;
+        }
+    }
+    
     ZKOrig(void, forward);
     
-    // Update immediately when navigating between matches (no debounce)
+    // Find new match index
+    NSRange newSelectedRange = [textView selectedRange];
+    NSInteger newMatchIndex = -1;
+    for (NSInteger i = 0; i < [currentHighlightRanges count]; i++) {
+        if (NSEqualRanges([[currentHighlightRanges objectAtIndex:i] rangeValue], newSelectedRange)) {
+            newMatchIndex = i;
+            break;
+        }
+    }
+    
+    // Check for wrapping
+    NSInteger lastIndex = [currentHighlightRanges count] - 1;
+    BOOL wrapped = forward ? (oldMatchIndex == lastIndex && newMatchIndex == 0) 
+                           : (oldMatchIndex == 0 && newMatchIndex == lastIndex);
+    if (wrapped) {
+        [self showWrapIndicator:forward];
+    }
+    
     [self updateFindHighlights];
+}
+
+- (void)showWrapIndicator:(BOOL)forward {
+    NSWindow *window = [[self textView] window];
+    NSString *imageName = forward ? @"find-bar-back-to-top" : @"find-bar-back-to-bottom";
+    NSImage *wrapIcon = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForResource:imageName ofType:@"png"]];
+    
+    // Create bezel with icon
+    NSView *bezelContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 140, 140)];
+    [bezelContainer setWantsLayer:YES];
+    [[bezelContainer layer] setBackgroundColor:[[NSColor colorWithCalibratedWhite:0.0 alpha:0.25] CGColor]];
+    [[bezelContainer layer] setCornerRadius:20.0];
+    
+    NSImageView *iconView = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 140, 140)];
+    [iconView setImageScaling:NSImageScaleProportionallyUpOrDown];
+    [iconView setImage:wrapIcon];
+    [bezelContainer addSubview:iconView];
+    
+    // Center in window
+    NSRect windowFrame = [[window contentView] frame];
+    [bezelContainer setFrameOrigin:NSMakePoint((windowFrame.size.width - 140) / 2, (windowFrame.size.height - 140) / 2)];
+    [[window contentView] addSubview:bezelContainer positioned:NSWindowAbove relativeTo:nil];
+    
+    // Animate
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        [context setDuration:1.25];
+        [[bezelContainer animator] setAlphaValue:0.0];
+    } completionHandler:^{
+        [bezelContainer removeFromSuperview];
+    }];
+
 }
 
 - (id)textView {
@@ -110,17 +172,11 @@ static BOOL isAnimatingOut = NO;
 
 - (void)setFieldColors:(int)color {
     ZKOrig(void, color);
-    
-    // Debounce updates when typing in find field
     [self scheduleUpdateFindHighlights];
 }
 
 - (void)scheduleUpdateFindHighlights {
-    if (debounceTimer) {
-        [debounceTimer invalidate];
-        debounceTimer = nil;
-    }
-    
+    [debounceTimer invalidate];
     debounceTimer = [NSTimer scheduledTimerWithTimeInterval:0.3
                                                      target:self
                                                    selector:@selector(updateFindHighlights)
@@ -135,12 +191,10 @@ static BOOL isAnimatingOut = NO;
     }
     
     [self clearFindHighlights];
-    
     ZKOrig(void, sender);
 }
 
 - (void)updateFindHighlights {
-    // Cancel any pending timer
     if (debounceTimer) {
         [debounceTimer invalidate];
         debounceTimer = nil;
@@ -164,7 +218,7 @@ static BOOL isAnimatingOut = NO;
     id controller = [self valueForKey:@"controller"];
     
     NSString *findString = [controller findString];
-    if (!findString || [findString length] == 0) return;
+    if ([findString length] == 0) return;
     
     NSString *text = [textView string];
     
@@ -326,14 +380,10 @@ static BOOL isAnimatingOut = NO;
 }
 
 - (void)clearFindHighlightsForUpdate {
-    // Clear highlights immediately without animation when updating
-    if (highlightViews) {
-        for (NSView *view in highlightViews) {
-            [view removeFromSuperview];
-        }
-        highlightViews = nil;
+    for (NSView *view in highlightViews) {
+        [view removeFromSuperview];
     }
-    
+    highlightViews = nil;
     currentHighlightRanges = nil;
 }
 
@@ -355,22 +405,18 @@ static BOOL isAnimatingOut = NO;
                 [dimOverlay removeFromSuperview];
                 dimOverlay = nil;
                 
-                if (highlightViews) {
-                    for (NSView *view in highlightViews) {
-                        [view removeFromSuperview];
-                    }
-                    highlightViews = nil;
+                for (NSView *view in highlightViews) {
+                    [view removeFromSuperview];
                 }
+                highlightViews = nil;
                 isAnimatingOut = NO;
             }
         }];
     } else {
-        if (highlightViews) {
-            for (NSView *view in highlightViews) {
-                [view removeFromSuperview];
-            }
-            highlightViews = nil;
+        for (NSView *view in highlightViews) {
+            [view removeFromSuperview];
         }
+        highlightViews = nil;
     }
     
     currentHighlightRanges = nil;
@@ -386,7 +432,7 @@ static BOOL isAnimatingOut = NO;
     // Clear highlights when clicking in text view (matches Chocolat's native behavior)
     if ([FindHighlightState hasActiveHighlights]) {
         NSView *findView = [self findXBFileFindView];
-        if (findView && [findView respondsToSelector:@selector(clearFindHighlights)]) {
+        if ([findView respondsToSelector:@selector(clearFindHighlights)]) {
             [findView performSelector:@selector(clearFindHighlights)];
         }
     }
@@ -427,7 +473,7 @@ static BOOL isAnimatingOut = NO;
         }
     }
     
-    if (findView && [findView respondsToSelector:@selector(updateFindHighlights)]) {
+    if ([findView respondsToSelector:@selector(updateFindHighlights)]) {
         [findView performSelector:@selector(updateFindHighlights)];
     }
 }
@@ -445,7 +491,7 @@ static BOOL isAnimatingOut = NO;
         }
     }
     
-    if (findView && [findView respondsToSelector:@selector(scheduleUpdateFindHighlights)]) {
+    if ([findView respondsToSelector:@selector(scheduleUpdateFindHighlights)]) {
         [findView performSelector:@selector(scheduleUpdateFindHighlights)];
     }
 }
