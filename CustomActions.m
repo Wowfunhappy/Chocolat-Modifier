@@ -1,0 +1,362 @@
+/*
+ * 
+ * Allows specifying directives at the top of a file to set Chocolat's actions (run, repl, build, debug, check).
+ * These take precedence over Chocolat's default actions for a language.
+ * I felt this was missing coming from CodeRunner.
+ * 
+ * Example program with directives for build and run:
+ 
+// @build: clang "$CHOC_FILE" -o "$CHOC_FILENAME_NOEXT" -framework AppKit
+// @run: clang "$CHOC_FILE" -o "$CHOC_FILENAME_NOEXT" -framework AppKit && "./$CHOC_FILENAME_NOEXT"
+
+#import <AppKit/AppKit.h>
+
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        NSLog(@"Hello, World!");
+    }
+    return 0;
+}
+ 
+ * In addition, a shabang line will also take precedence over Chocolat's default run action.
+ * (However, a run directive within the file takes precedence over a shabang line.)
+ * 
+ */
+
+
+
+#import <Cocoa/Cocoa.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
+
+@interface CHSingleFileDocument : NSDocument
+- (NSString *)stringValue;
+- (void)setTerminalTabDescription:(NSString *)description;
+- (NSString *)terminalTabDescription;
+- (id)cachedLanguage;
+@end
+
+@interface CHLanguage : NSObject
+@property(retain) NSMutableArray *fileExtensions;
+@property(retain) NSMutableArray *detectors;
+@end
+
+@interface CHBuildController : NSObject
+- (id)terminalTabForDescription:(NSString *)description app:(id)terminal;
+- (NSString *)descriptionForActiveTab:(id)terminal;
+- (NSString *)terminalRunScript:(NSString *)scriptPath;
+@end
+
+@interface CHTemporaryFile : NSObject
+- (instancetype)init;
+- (void)setUnlinkOnFinalize:(BOOL)unlink;
+- (NSString *)path;
+@end
+
+@interface AppleTerminalTab : NSObject
+@property (assign) BOOL busy;
+@property (assign) BOOL selected;
+@end
+
+@interface SBApplication : NSObject
++ (id)applicationWithBundleIdentifier:(NSString *)bundleIdentifier;
+- (void)activate;
+- (AppleTerminalTab *)doScript:(NSString *)script in:(AppleTerminalTab *)tab;
+@end
+
+
+
+@interface RunChanges : NSObject
+@end
+
+static IMP originalRunScriptNamed = NULL;
+
+// Helper function to check if a line is a comment or directive
+static BOOL isCommentOrDirectiveLine(NSString *line) {
+    NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if ([trimmed length] == 0) return YES; // Empty line
+    
+    // Check for @directive at start of line (with no comment prefix)
+    if ([trimmed hasPrefix:@"@"]) {
+        return YES;
+    }
+    
+    // Check for common comment patterns
+    if ([trimmed hasPrefix:@"#"] ||      // Shell, Python, Ruby, etc.
+        [trimmed hasPrefix:@"//"] ||     // C++, Java, JavaScript, etc.
+        [trimmed hasPrefix:@"/*"] ||     // C block comment start
+        [trimmed hasPrefix:@"*"] ||      // Continuation of block comment
+        [trimmed hasPrefix:@"--"] ||     // SQL, Lua, Haskell
+        [trimmed hasPrefix:@";;"] ||     // Scheme, Lisp, Clojure
+        [trimmed hasPrefix:@"%"] ||      // MATLAB,
+        [trimmed hasPrefix:@"%"] ||      // MATLAB, LaTeX, Prolog
+        [trimmed hasPrefix:@"'"] ||      // Visual Basic, VBScript
+        [trimmed hasPrefix:@"!"] ||      // Fortran
+        [trimmed hasPrefix:@"REM "] ||   // BASIC, batch files
+        [trimmed hasPrefix:@"rem "]) {   // BASIC, batch files (lowercase)
+        return YES;
+    }
+    
+    return NO;
+}
+
+// Helper function to extract command from @action: directive
+static NSString* extractActionCommand(NSString *content, NSString *actionName) {
+    if (!content || !actionName) return nil;
+    
+    // Split content into lines
+    NSArray *lines = [content componentsSeparatedByString:@"\n"];
+    NSUInteger lineCount = [lines count];
+    
+    // Create case-insensitive regex pattern for @action: directive
+    // Pattern: optional whitespace, optional 0-3 chars, then @action:, then optional space, then command
+    NSString *pattern = [NSString stringWithFormat:@"^\\s*.{0,3}?@%@:\\s*(.+)$", actionName];
+    NSError *error = nil;
+    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:pattern
+                                                                           options:NSRegularExpressionCaseInsensitive
+                                                                             error:&error];
+    
+    
+    BOOL passedShebang = NO;
+    
+    for (NSUInteger i = 0; i < lineCount && i < 10; i++) { // Still limit to first 10 lines as safety
+        NSString *line = lines[i];
+        
+        // Skip shebang line
+        if (i == 0 && [line hasPrefix:@"#!"]) {
+            passedShebang = YES;
+            continue;
+        }
+        
+        // If we find a non-comment line after shebang/start, stop looking
+        if ((i > 0 || passedShebang) && !isCommentOrDirectiveLine(line)) {
+            break;
+        }
+        
+        NSTextCheckingResult *match = [regex firstMatchInString:line options:0 range:NSMakeRange(0, [line length])];
+        
+        if (match && match.numberOfRanges > 1) {
+            NSRange commandRange = [match rangeAtIndex:1];
+            NSString *command = [[line substringWithRange:commandRange] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            return command;
+        }
+    }
+    
+    return nil;
+}
+
+static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
+    // Map script names to action names
+    NSString *actionName = nil;
+    if ([scriptName isEqualToString:@"run.sh"]) {
+        actionName = @"run";
+    } else if ([scriptName isEqualToString:@"build.sh"]) {
+        actionName = @"build";
+    } else if ([scriptName isEqualToString:@"debug.sh"]) {
+        actionName = @"debug";
+    } else if ([scriptName isEqualToString:@"check.sh"]) {
+        actionName = @"check";
+    } else if ([scriptName isEqualToString:@"repl.sh"]) {
+        actionName = @"repl";
+    }
+    
+    NSDocumentController *docController = [NSDocumentController sharedDocumentController];
+    CHSingleFileDocument *document = (CHSingleFileDocument *)[docController currentDocument];
+    
+    if (document && actionName) {
+        NSString *content = [document stringValue];
+        NSString *directiveCommand = nil;
+        NSString *finalCommand = nil;
+        
+        // First, check for @action: directive
+        if (content) {
+            directiveCommand = extractActionCommand(content, actionName);
+        }
+        
+        // If we found a directive, use it
+        if (directiveCommand) {
+            finalCommand = directiveCommand;
+        }
+        // Otherwise, for run.sh only, check for shebang
+        else if ([scriptName isEqualToString:@"run.sh"] && content && [content hasPrefix:@"#!"]) {
+            // Extract shebang line
+            NSRange firstLineRange = [content rangeOfString:@"\n"];
+            NSString *shebangLine = firstLineRange.location != NSNotFound ? 
+                [content substringToIndex:firstLineRange.location] : content;
+            
+            NSString *shebang = [[shebangLine substringFromIndex:2] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            
+            // For shebang, we'll need a file path - either real or temporary
+            // This will be handled later when we create the temp file
+            finalCommand = shebang;
+        }
+        
+        // If we have a command to execute
+        if (finalCommand) {
+            // Save document if needed
+            NSURL *fileURL = [document fileURL];
+            if (fileURL && [document isDocumentEdited]) {
+                [document saveDocument:nil];
+            }
+            
+            // Create a temporary script file
+            Class tempFileClass = NSClassFromString(@"CHTemporaryFile");
+            CHTemporaryFile *tempFile = [[tempFileClass alloc] init];
+            NSString *tempPath = [tempFile path];
+                    // For unsaved files, create a temporary file for the content if needed
+                    NSString *tempContentPath = nil;
+                    if (!fileURL && content) {
+                        // Create another temporary file for the document content
+                        CHTemporaryFile *tempContentFile = [[tempFileClass alloc] init];
+                        tempContentPath = [tempContentFile path];
+                        
+                        // Determine file extension from the language using detectors (same as Chocolat's save panel)
+                        NSString *fileExt = nil;
+                        CHLanguage *language = [document cachedLanguage];
+                        
+                        if (language) {
+                            // Get detectors array from language (this is how Chocolat does it)
+                            NSArray *detectors = nil;
+                            @try {
+                                detectors = [language detectors];
+                            }
+                            @catch (NSException *e) {
+                            }
+                            
+                            // Iterate through detectors looking for one with an extension
+                            if (detectors) {
+                                for (id detector in detectors) {
+                                    @try {
+                                        NSString *ext = [detector valueForKey:@"extension"];
+                                        if (ext && [ext length] > 0) {
+                                            fileExt = ext;
+                                            break;
+                                        }
+                                    }
+                                    @catch (NSException *e) {
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Fallback to window title if no language extension found
+                        if (!fileExt || [fileExt length] == 0) {
+                            NSString *displayName = [document displayName];
+                            fileExt = [displayName pathExtension];
+                        }
+                        
+                        // Final fallback to txt
+                        if (!fileExt || [fileExt length] == 0) {
+                            fileExt = @"txt";
+                        }
+                        
+                        // Create a better temporary filename
+                        NSString *betterTempPath = [[tempContentPath stringByDeletingPathExtension] 
+                                                    stringByAppendingPathExtension:fileExt];
+                        [[NSFileManager defaultManager] moveItemAtPath:tempContentPath 
+                                                               toPath:betterTempPath 
+                                                                error:nil];
+                        tempContentPath = betterTempPath;
+                        
+                        // Write the document content to the temporary file
+                        [content writeToFile:tempContentPath 
+                                  atomically:YES 
+                                    encoding:NSUTF8StringEncoding 
+                                       error:nil];
+                    }
+                    
+                    // Set up environment variables
+                    NSString *setupEnv = @"";
+                    NSString *filePath = fileURL ? [fileURL path] : tempContentPath;
+                    
+                    if (filePath) {
+                        // Set CHOC_FILE and related variables
+                        NSString *fileName = [filePath lastPathComponent];
+                        NSString *fileDir = [filePath stringByDeletingLastPathComponent];
+                        NSString *fileNameNoExt = [fileName stringByDeletingPathExtension];
+                        NSString *fileExt = [filePath pathExtension];
+                        
+                        setupEnv = [NSString stringWithFormat:
+                            @"# Set Chocolat variables\n"
+                            @"export CHOC_FILE='%@'\n"
+                            @"export CHOC_FILENAME='%@'\n"
+                            @"export CHOC_FILENAME_NOEXT='%@'\n"
+                            @"export CHOC_FILE_DIR='%@'\n"
+                            @"export CHOC_EXT='%@'\n\n",
+                            [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+                            [fileName stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+                            [fileNameNoExt stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+                            [fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+                            [fileExt stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
+                        ];
+                    }
+                    
+                    // Build the final script content
+                    NSString *actualCommand = finalCommand;
+                    
+                    // If this is a shebang command (for run.sh) and we have a file path, append it
+                    if ([scriptName isEqualToString:@"run.sh"] && 
+                        !directiveCommand &&  // Only for shebang, not directives
+                        content && [content hasPrefix:@"#!"] &&
+                        filePath) {
+                        actualCommand = [NSString stringWithFormat:@"%@ '%@'", 
+                            finalCommand,
+                            [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
+                        ];
+                    }
+                    
+                    // Write the script content
+                    NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@\n", setupEnv, actualCommand];
+                    NSError *writeError = nil;
+                    [scriptContent writeToFile:tempPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
+                    
+                    // Make the script executable
+                    [[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions: @(0755)} 
+                                                      ofItemAtPath:tempPath 
+                                                             error:nil];
+                    
+                    // Use terminalRunScript: which sets up all the Chocolat environment variables
+                    SEL terminalRunScriptSelector = @selector(terminalRunScript:);
+                    NSString *terminalCommand = ((NSString* (*)(id, SEL, NSString*))objc_msgSend)(self, terminalRunScriptSelector, tempPath);
+                    
+                    // Run in Terminal
+                    SBApplication *terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
+                    [terminal activate];
+                    
+                    AppleTerminalTab *tab = nil;
+                    NSString *tabDescription = [document terminalTabDescription];
+                    if (tabDescription) {
+                        SEL selector = @selector(terminalTabForDescription:app:);
+                        tab = ((id (*)(id, SEL, id, id))objc_msgSend)(self, selector, tabDescription, terminal);
+                        if ([tab busy]) tab = nil;
+                    }
+                    
+                    AppleTerminalTab *newTab = [terminal doScript:terminalCommand in:tab];
+                    [newTab setSelected:YES];
+                    
+                    SEL descSelector = @selector(descriptionForActiveTab:);
+                    NSString *newTabDescription = ((id (*)(id, SEL, id))objc_msgSend)(self, descSelector, terminal);
+                    [document setTerminalTabDescription:newTabDescription];
+                    
+                    return;
+        }
+    }
+    
+    // Call original implementation
+    if (originalRunScriptNamed) {
+        ((void (*)(id, SEL, NSString *))originalRunScriptNamed)(self, _cmd, scriptName);
+    }
+}
+
+@implementation RunChanges
+
++ (void)load {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0), dispatch_get_main_queue(), ^{
+        Class buildController = NSClassFromString(@"CHBuildController");
+        Method method = class_getInstanceMethod(buildController, @selector(runScriptNamed:));
+        originalRunScriptNamed = method_getImplementation(method);
+        method_setImplementation(method, (IMP)swizzled_runScriptNamed);
+    });
+}
+
+@end
