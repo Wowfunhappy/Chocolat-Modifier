@@ -144,6 +144,12 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			[fileMenu removeItem:item];
 		}
 		
+		[fileMenu insertItem:[NSMenuItem separatorItem] atIndex:18];
+
+		NSMenuItem *openInNewWindowItem = [[NSMenuItem alloc] initWithTitle:@"Open in New Window" action:@selector(openInNewWindow:) keyEquivalent:@""];
+		[openInNewWindowItem setTarget:self];
+		[fileMenu insertItem:openInNewWindowItem atIndex:22];
+
 		// Fix Help menu
 		NSMenuItem *helpMenuItem = [mainMenu itemWithTitle:@"Help"];
 		NSMenu *helpMenu = [helpMenuItem submenu];
@@ -178,6 +184,62 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 		[chocolatHelpItem setAction:@selector(showHelp:)];
 		[chocolatHelpItem setTarget:nil];
 	});
+}
+
+- (void)openInNewWindow:(id)sender {
+	// Get the current document
+	NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
+	NSDocument *currentDocument = [documentController currentDocument];
+	if (!currentDocument) {
+		return;
+	}
+	
+	// Get the file URL
+	NSURL *fileURL = [currentDocument fileURL];
+	if (!fileURL) {
+		return;
+	}
+	
+	// Open the document without displaying (to get the document object)
+	NSError *error = nil;
+	SEL superOpenSelector = @selector(super_openDocumentWithContentsOfURL:display:error:);
+	
+	if ([documentController respondsToSelector:superOpenSelector]) {
+		// Use NSInvocation to call the method
+		NSMethodSignature *signature = [documentController methodSignatureForSelector:superOpenSelector];
+		NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+		[invocation setTarget:documentController];
+		[invocation setSelector:superOpenSelector];
+		[invocation setArgument:&fileURL atIndex:2];
+		BOOL displayFlag = NO;
+		[invocation setArgument:&displayFlag atIndex:3];
+		[invocation setArgument:&error atIndex:4];
+		[invocation invoke];
+		
+		// Get the return value (the document)
+		id document = nil;
+		[invocation getReturnValue:&document];
+		
+		if (document) {
+			// Clear existing window controller
+			SEL setExistingWindowControllerSelector = @selector(setExistingWindowController:);
+			if ([document respondsToSelector:setExistingWindowControllerSelector]) {
+				[document performSelector:setExistingWindowControllerSelector withObject:nil];
+			}
+			
+			// Create new window controllers
+			SEL makeWindowControllersSelector = @selector(makeWindowControllersForceHideSplendidBar:);
+			if ([document respondsToSelector:makeWindowControllersSelector]) {
+				NSMethodSignature *makeWindowSig = [document methodSignatureForSelector:makeWindowControllersSelector];
+				NSInvocation *makeWindowInvocation = [NSInvocation invocationWithMethodSignature:makeWindowSig];
+				[makeWindowInvocation setTarget:document];
+				[makeWindowInvocation setSelector:makeWindowControllersSelector];
+				BOOL forceHide = YES;
+				[makeWindowInvocation setArgument:&forceHide atIndex:2];
+				[makeWindowInvocation invoke];
+			}
+		}
+	}
 }
 
 @end
