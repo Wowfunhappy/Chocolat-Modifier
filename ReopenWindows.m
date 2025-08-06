@@ -68,12 +68,32 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_ReopenWindows, 
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"NSQuitAlwaysKeepsWindows"]) {
 		NSMutableArray *openDocuments = [NSMutableArray array];
 
-		// For now, let's just save all open documents
-		// Window visibility check doesn't work properly with Chocolat's project view
-		for (NSDocument *document in [[NSDocumentController sharedDocumentController] documents]) {
-			if ([document fileURL]) {
-				NSString *path = [[document fileURL] path];
-				[openDocuments addObject:path];
+		// Get all windows
+		for (NSWindow *window in [[NSApplication sharedApplication] windows]) {
+			NSWindowController *windowController = [window windowController];
+			if (!windowController) continue;
+			
+			// Skip window controllers that don't have tabControllers (like preferences)
+			if (![windowController respondsToSelector:@selector(tabControllers)]) continue;
+			
+			// Get all tab controllers from the window controller
+			NSArray *tabControllers = [windowController performSelector:@selector(tabControllers)];
+			
+			// Process each tab controller
+			for (id tabController in tabControllers) {
+				// Get active documents from the tab controller
+				NSArray *activeDocuments = [tabController performSelector:@selector(activeDocumentsArray)];
+				
+				// Save paths for all active documents
+				for (id document in activeDocuments) {
+					NSURL *url = [document performSelector:@selector(fileURL)];
+					if (url) {
+						NSString *path = [url path];
+						if (![openDocuments containsObject:path]) {
+							[openDocuments addObject:path];
+						}
+					}
+				}
 			}
 		}
 
