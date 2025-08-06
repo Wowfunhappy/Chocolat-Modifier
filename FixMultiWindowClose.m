@@ -1,7 +1,7 @@
 /*
 *
 * Closing a file in one window should not close the file in the other window!
-*  
+*	
 */
 
 #import <objc/runtime.h>
