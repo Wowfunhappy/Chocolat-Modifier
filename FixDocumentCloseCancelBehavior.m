@@ -24,6 +24,18 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSplendidBarController_CloseFix, NSObj
 		return;
 	}
 	
+	// Check if autosaving is enabled and document is dirty
+	BOOL autoSaveEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"];
+	if (autoSaveEnabled && [document isDocumentEdited]) {
+		// Save the document automatically
+		[document performSelector:@selector(saveDocument:) withObject:nil];
+		
+		// Remove the document from the tab
+		[tabController performSelector:@selector(removeTabDocument:) withObject:document];
+		[self performSelector:@selector(lineUpNextSelection)];
+		return;
+	}
+	
 	// Set window to not close when document closes
 	id windowController = [tabController valueForKey:@"windowController"];
 	[windowController performSelector:@selector(setDoNotCloseWindowOnClose:) withObject:@(YES)];
