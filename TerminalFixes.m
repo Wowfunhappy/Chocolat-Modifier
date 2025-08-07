@@ -347,15 +347,18 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 						// Add cd to file directory if we have a file path
 						if (filePath) {
 							NSString *fileDir = [filePath stringByDeletingLastPathComponent];
-							[terminal doScript:[
-								NSString stringWithFormat:@"cd '%@'\n", 
-								[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
-							] in:tab];
+							NSString *cdCommand = [NSString stringWithFormat:@"cd '%@'; history -d $(history 1 | awk '{print $1}')", 
+								[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
+							[terminal doScript:cdCommand in:tab];
 						}
 						
 					}
 					// Now run the actual command in the specific tab
-					newTab = [terminal doScript:terminalCommand in:tab];
+					// Delete the last history entry after running the command
+					NSString *historyFreeCommand = [NSString stringWithFormat:
+						@"%@ history -d $(history 1 | awk '{print $1}')", 
+						terminalCommand];
+					newTab = [terminal doScript:historyFreeCommand in:tab];
 					[newTab setSelected:YES];
 					
 					SEL descSelector = @selector(descriptionForActiveTab:);
@@ -408,7 +411,11 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 			tab = [terminal doScript:@"" in:nil];
 			[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
 		}
-		newTab = [terminal doScript:terminalCommand in:tab];
+		// Run command and delete from history
+		NSString *historyFreeCommand = [NSString stringWithFormat:
+			@"%@ history -d $(history 1 | awk '{print $1}')", 
+			terminalCommand];
+		newTab = [terminal doScript:historyFreeCommand in:tab];
 		[newTab setSelected:YES];
 		
 		SEL descSelector = @selector(descriptionForActiveTab:);
