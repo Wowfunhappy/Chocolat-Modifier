@@ -208,164 +208,164 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 			Class tempFileClass = NSClassFromString(@"CHTemporaryFile");
 			CHTemporaryFile *tempFile = [[tempFileClass alloc] init];
 			NSString *tempPath = [tempFile path];
-					// For unsaved files, create a temporary file for the content if needed
-					NSString *tempContentPath = nil;
-					if (!fileURL && content) {
-						// Create another temporary file for the document content
-						CHTemporaryFile *tempContentFile = [[tempFileClass alloc] init];
-						tempContentPath = [tempContentFile path];
-						
-						// Determine file extension from the language using detectors (same as Chocolat's save panel)
-						NSString *fileExt = nil;
-						CHLanguage *language = [document cachedLanguage];
-						
-						if (language) {
-							// Get detectors array from language (this is how Chocolat does it)
-							NSArray *detectors = nil;
+			// For unsaved files, create a temporary file for the content if needed
+			NSString *tempContentPath = nil;
+			if (!fileURL && content) {
+				// Create another temporary file for the document content
+				CHTemporaryFile *tempContentFile = [[tempFileClass alloc] init];
+				tempContentPath = [tempContentFile path];
+				
+				// Determine file extension from the language using detectors (same as Chocolat's save panel)
+				NSString *fileExt = nil;
+				CHLanguage *language = [document cachedLanguage];
+				
+				if (language) {
+					// Get detectors array from language (this is how Chocolat does it)
+					NSArray *detectors = nil;
+					@try {
+						detectors = [language detectors];
+					}
+					@catch (NSException *e) {
+					}
+					
+					// Iterate through detectors looking for one with an extension
+					if (detectors) {
+						for (id detector in detectors) {
 							@try {
-								detectors = [language detectors];
+								NSString *ext = [detector valueForKey:@"extension"];
+								if (ext && [ext length] > 0) {
+									fileExt = ext;
+									break;
+								}
 							}
 							@catch (NSException *e) {
 							}
-							
-							// Iterate through detectors looking for one with an extension
-							if (detectors) {
-								for (id detector in detectors) {
-									@try {
-										NSString *ext = [detector valueForKey:@"extension"];
-										if (ext && [ext length] > 0) {
-											fileExt = ext;
-											break;
-										}
-									}
-									@catch (NSException *e) {
-									}
-								}
-							}
 						}
-						
-						// Fallback to window title if no language extension found
-						if (!fileExt || [fileExt length] == 0) {
-							NSString *displayName = [document displayName];
-							fileExt = [displayName pathExtension];
-						}
-						
-						// Final fallback to txt
-						if (!fileExt || [fileExt length] == 0) {
-							fileExt = @"txt";
-						}
-						
-						// Create a better temporary filename
-						NSString *betterTempPath = [[tempContentPath stringByDeletingPathExtension] 
-													stringByAppendingPathExtension:fileExt];
-						[[NSFileManager defaultManager] moveItemAtPath:tempContentPath 
-																toPath:betterTempPath 
-																error:nil];
-						tempContentPath = betterTempPath;
-						
-						// Write the document content to the temporary file
-						[content writeToFile:tempContentPath 
-									atomically:YES 
-									encoding:NSUTF8StringEncoding 
-										error:nil];
 					}
-					
-					// Set up environment variables
-					NSString *setupEnv = @"";
-					NSString *filePath = fileURL ? [fileURL path] : tempContentPath;
-					
-					if (filePath) {
-						// Set CHOC_FILE and related variables
-						NSString *fileName = [filePath lastPathComponent];
-						NSString *fileDir = [filePath stringByDeletingLastPathComponent];
-						NSString *fileNameNoExt = [fileName stringByDeletingPathExtension];
-						NSString *fileExt = [filePath pathExtension];
-						
-						setupEnv = [NSString stringWithFormat:
-							@"# Set Chocolat variables\n"
-							@"export CHOC_FILE='%@'\n"
-							@"export CHOC_FILENAME='%@'\n"
-							@"export CHOC_FILENAME_NOEXT='%@'\n"
-							@"export CHOC_FILE_DIR='%@'\n"
-							@"export CHOC_EXT='%@'\n\n",
-							[filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
-							[fileName stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
-							[fileNameNoExt stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
-							[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
-							[fileExt stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
-						];
-					}
-					
-					// Build the final script content
-					NSString *actualCommand = finalCommand;
-					
-					// If this is a shebang command (for run.sh) and we have a file path, append it
-					if ([scriptName isEqualToString:@"run.sh"] && 
-						!directiveCommand &&	// Only for shebang, not directives
-						content && [content hasPrefix:@"#!"] &&
-						filePath) {
-						actualCommand = [NSString stringWithFormat:@"%@ '%@'", 
-							finalCommand,
-							[filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
-						];
-					}
-					
-					NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@\n", setupEnv, actualCommand];
-					NSError *writeError = nil;
-					[scriptContent writeToFile:tempPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
-					
-					// Make the script executable
-					[[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions: @(0755)} 
-														ofItemAtPath:tempPath 
-															 error:nil];
-					
-					// Use terminalRunScript: which sets up all the Chocolat environment variables
-					SEL terminalRunScriptSelector = @selector(terminalRunScript:);
-					NSString *terminalCommand = ((NSString* (*)(id, SEL, NSString*))objc_msgSend)(self, terminalRunScriptSelector, tempPath);
-					
-					// Run in Terminal
-					SBApplication *terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
-					[terminal activate];
-					
-					AppleTerminalTab *tab = nil;
-					NSString *tabDescription = [document terminalTabDescription];
-					if (tabDescription) {
-						SEL selector = @selector(terminalTabForDescription:app:);
-						tab = ((id (*)(id, SEL, id, id))objc_msgSend)(self, selector, tabDescription, terminal);
-						if ([tab busy]) tab = nil;
-					}
-					
-					// Unlike the original app, always specify a tab.
-					// Ensures that if the user creates a tab, the command won't run again.
-					AppleTerminalTab *newTab = nil;
-					if (!tab) {
-						// Create an empty tab first to prevent command from becoming a default
-						tab = [terminal doScript:@"" in:nil];
-						// Small delay to let the tab initialize
-						[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
-						
-						// Add cd to file directory if we have a file path
-						if (filePath) {
-							NSString *fileDir = [filePath stringByDeletingLastPathComponent];
-							NSString *cdCommand = [NSString stringWithFormat:@"cd '%@'; history -d $(history 1 | awk '{print $1}')", 
-								[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
-							[terminal doScript:cdCommand in:tab];
-						}
-						
-					}
-					// Now run the actual command in the specific tab
-					// Delete the last history entry after running the command
-					NSString *historyFreeCommand = [NSString stringWithFormat:
-						@"%@ history -d $(history 1 | awk '{print $1}')", 
-						terminalCommand];
-					newTab = [terminal doScript:historyFreeCommand in:tab];
-					[newTab setSelected:YES];
-					
-					SEL descSelector = @selector(descriptionForActiveTab:);
-					NSString *newTabDescription = ((id (*)(id, SEL, id))objc_msgSend)(self, descSelector, terminal);
-					[document setTerminalTabDescription:newTabDescription];
-					
-					return;
+				}
+				
+				// Fallback to window title if no language extension found
+				if (!fileExt || [fileExt length] == 0) {
+					NSString *displayName = [document displayName];
+					fileExt = [displayName pathExtension];
+				}
+				
+				// Final fallback to txt
+				if (!fileExt || [fileExt length] == 0) {
+					fileExt = @"txt";
+				}
+				
+				// Create a better temporary filename
+				NSString *betterTempPath = [[tempContentPath stringByDeletingPathExtension] 
+											stringByAppendingPathExtension:fileExt];
+				[[NSFileManager defaultManager] moveItemAtPath:tempContentPath 
+														toPath:betterTempPath 
+														error:nil];
+				tempContentPath = betterTempPath;
+				
+				// Write the document content to the temporary file
+				[content writeToFile:tempContentPath 
+							atomically:YES 
+							encoding:NSUTF8StringEncoding 
+								error:nil];
+			}
+			
+			// Set up environment variables
+			NSString *setupEnv = @"";
+			NSString *filePath = fileURL ? [fileURL path] : tempContentPath;
+			
+			if (filePath) {
+				// Set CHOC_FILE and related variables
+				NSString *fileName = [filePath lastPathComponent];
+				NSString *fileDir = [filePath stringByDeletingLastPathComponent];
+				NSString *fileNameNoExt = [fileName stringByDeletingPathExtension];
+				NSString *fileExt = [filePath pathExtension];
+				
+				setupEnv = [NSString stringWithFormat:
+					@"# Set Chocolat variables\n"
+					@"export CHOC_FILE='%@'\n"
+					@"export CHOC_FILENAME='%@'\n"
+					@"export CHOC_FILENAME_NOEXT='%@'\n"
+					@"export CHOC_FILE_DIR='%@'\n"
+					@"export CHOC_EXT='%@'\n\n",
+					[filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+					[fileName stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+					[fileNameNoExt stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+					[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"],
+					[fileExt stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
+				];
+			}
+			
+			// Build the final script content
+			NSString *actualCommand = finalCommand;
+			
+			// If this is a shebang command (for run.sh) and we have a file path, append it
+			if ([scriptName isEqualToString:@"run.sh"] && 
+				!directiveCommand &&	// Only for shebang, not directives
+				content && [content hasPrefix:@"#!"] &&
+				filePath) {
+				actualCommand = [NSString stringWithFormat:@"%@ '%@'", 
+					finalCommand,
+					[filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
+				];
+			}
+			
+			NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@\n", setupEnv, actualCommand];
+			NSError *writeError = nil;
+			[scriptContent writeToFile:tempPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
+			
+			// Make the script executable
+			[[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions: @(0755)} 
+												ofItemAtPath:tempPath 
+													 error:nil];
+			
+			// Use terminalRunScript: which sets up all the Chocolat environment variables
+			SEL terminalRunScriptSelector = @selector(terminalRunScript:);
+			NSString *terminalCommand = ((NSString* (*)(id, SEL, NSString*))objc_msgSend)(self, terminalRunScriptSelector, tempPath);
+			
+			// Run in Terminal
+			SBApplication *terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
+			[terminal activate];
+			
+			AppleTerminalTab *tab = nil;
+			NSString *tabDescription = [document terminalTabDescription];
+			if (tabDescription) {
+				SEL selector = @selector(terminalTabForDescription:app:);
+				tab = ((id (*)(id, SEL, id, id))objc_msgSend)(self, selector, tabDescription, terminal);
+				if ([tab busy]) tab = nil;
+			}
+			
+			// Unlike the original app, always specify a tab.
+			// Ensures that if the user creates a tab, the command won't run again.
+			AppleTerminalTab *newTab = nil;
+			if (!tab) {
+				// Create an empty tab first to prevent command from becoming a default
+				tab = [terminal doScript:@"" in:nil];
+				// Small delay to let the tab initialize
+				[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+				
+				// Add cd to file directory if we have a file path
+				if (filePath) {
+					NSString *fileDir = [filePath stringByDeletingLastPathComponent];
+					NSString *cdCommand = [NSString stringWithFormat:@"cd '%@'; history -d $(history 1 | awk '{print $1}')", 
+						[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
+					[terminal doScript:cdCommand in:tab];
+				}
+				
+			}
+			// Now run the actual command in the specific tab
+			// Delete the last history entry after running the command
+			NSString *historyFreeCommand = [NSString stringWithFormat:
+				@"%@ history -d $(history 1 | awk '{print $1}')", 
+				terminalCommand];
+			newTab = [terminal doScript:historyFreeCommand in:tab];
+			[newTab setSelected:YES];
+			
+			SEL descSelector = @selector(descriptionForActiveTab:);
+			NSString *newTabDescription = ((id (*)(id, SEL, id))objc_msgSend)(self, descSelector, terminal);
+			[document setTerminalTabDescription:newTabDescription];
+			
+			return;
 		}
 	}
 	
