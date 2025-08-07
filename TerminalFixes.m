@@ -42,6 +42,7 @@ int main(int argc, const char * argv[]) {
 @end
 
 @interface CHBuildController : NSObject
++ (NSString *)getFullPathForScript:(NSString *)scriptName document:(id)document;
 - (id)terminalTabForDescription:(NSString *)description app:(id)terminal;
 - (NSString *)descriptionForActiveTab:(id)terminal;
 - (NSString *)terminalRunScript:(NSString *)scriptPath;
@@ -309,16 +310,7 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 						];
 					}
 					
-					// Write the script content
-					// Add cd to file directory if we have a file path (like Chocolat's built-in scripts do)
-					NSString *cdCommand = @"";
-					if (filePath) {
-						NSString *fileDir = [filePath stringByDeletingLastPathComponent];
-						cdCommand = [NSString stringWithFormat:@"cd '%@'\n", 
-							[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
-					}
-					
-					NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@%@\n", setupEnv, cdCommand, actualCommand];
+					NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@\n", setupEnv, actualCommand];
 					NSError *writeError = nil;
 					[scriptContent writeToFile:tempPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
 					
@@ -343,7 +335,27 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 						if ([tab busy]) tab = nil;
 					}
 					
-					AppleTerminalTab *newTab = [terminal doScript:terminalCommand in:tab];
+					// Unlike the original app, always specify a tab.
+					// Ensures that if the user creates a tab, the command won't run again.
+					AppleTerminalTab *newTab = nil;
+					if (!tab) {
+						// Create an empty tab first to prevent command from becoming a default
+						tab = [terminal doScript:@"" in:nil];
+						// Small delay to let the tab initialize
+						[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+						
+						// Add cd to file directory if we have a file path
+						if (filePath) {
+							NSString *fileDir = [filePath stringByDeletingLastPathComponent];
+							[terminal doScript:[
+								NSString stringWithFormat:@"cd '%@'\n", 
+								[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]
+							] in:tab];
+						}
+						
+					}
+					// Now run the actual command in the specific tab
+					newTab = [terminal doScript:terminalCommand in:tab];
 					[newTab setSelected:YES];
 					
 					SEL descSelector = @selector(descriptionForActiveTab:);
@@ -354,9 +366,54 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 		}
 	}
 	
-	// Call original implementation
 	if (originalRunScriptNamed) {
-		((void (*)(id, SEL, NSString *))originalRunScriptNamed)(self, _cmd, scriptName);
+		// Unchanged from the original app except we want to always specify a tab.
+		
+		NSDocumentController *docController2 = [NSDocumentController sharedDocumentController];
+		CHSingleFileDocument *document2 = (CHSingleFileDocument *)[docController2 currentDocument];
+		
+		Class buildControllerClass = [self class];
+		NSString *scriptPath = [buildControllerClass getFullPathForScript:scriptName document:document2];
+		
+		if (!scriptPath || [scriptPath length] == 0) {
+			// Fall back if we can't get the script path
+			((void (*)(id, SEL, NSString *))originalRunScriptNamed)(self, _cmd, scriptName);
+			return;
+		}
+		
+		// Get the terminal command
+		SEL terminalRunScriptSelector = @selector(terminalRunScript:);
+		NSString *terminalCommand = ((NSString* (*)(id, SEL, NSString*))objc_msgSend)(self, terminalRunScriptSelector, scriptPath);
+		
+		if (!terminalCommand || [terminalCommand length] == 0) {
+			((void (*)(id, SEL, NSString *))originalRunScriptNamed)(self, _cmd, scriptName);
+			return;
+		}
+		
+		// Run in Terminal with our fix
+		SBApplication *terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
+		[terminal activate];
+		
+		AppleTerminalTab *tab = nil;
+		NSString *tabDescription = [document2 terminalTabDescription];
+		if (tabDescription) {
+			SEL selector = @selector(terminalTabForDescription:app:);
+			tab = ((id (*)(id, SEL, id, id))objc_msgSend)(self, selector, tabDescription, terminal);
+			if ([tab busy]) tab = nil;
+		}
+		
+		// FIX: Always specify a tab
+		AppleTerminalTab *newTab = nil;
+		if (!tab) {
+			tab = [terminal doScript:@"" in:nil];
+			[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+		}
+		newTab = [terminal doScript:terminalCommand in:tab];
+		[newTab setSelected:YES];
+		
+		SEL descSelector = @selector(descriptionForActiveTab:);
+		NSString *newTabDescription = ((id (*)(id, SEL, id))objc_msgSend)(self, descSelector, terminal);
+		[document2 setTerminalTabDescription:newTabDescription];
 	}
 }
 
