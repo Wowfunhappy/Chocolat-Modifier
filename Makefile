@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CC = clang
-CFLAGS = -dynamiclib -framework Foundation -framework AppKit -undefined dynamic_lookup -fobjc-arc
+CFLAGS = -dynamiclib -framework Foundation -framework AppKit -undefined dynamic_lookup -fobjc-arc -O2
 OUTPUT = ChocolatModifier.dylib
 # Find all .m files in current directory and ZKSwizzle subdirectory
 SOURCES = $(wildcard *.m) $(wildcard ZKSwizzle/*.m)
