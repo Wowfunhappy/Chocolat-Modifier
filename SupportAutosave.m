@@ -100,27 +100,80 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 	NSString *extension = [fileURL pathExtension];
 	NSString *directory = [[fileURL path] stringByDeletingLastPathComponent];
 	
-	// Find a unique name by appending " copy" or " copy 2", etc.
-	NSString *newFilename = [filename stringByAppendingString:@" copy"];
-	NSString *newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
-	int copyNumber = 2;
-	
 	NSFileManager *fileManager = [NSFileManager defaultManager];
-	while ([fileManager fileExistsAtPath:newPath]) {
-		newFilename = [NSString stringWithFormat:@"%@ copy %d", filename, copyNumber];
-		newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
-		copyNumber++;
+	
+	// Check if we can write to the directory
+	BOOL canWriteToDirectory = [fileManager isWritableFileAtPath:directory];
+	
+	if (canWriteToDirectory) {
+		// Directory is writable, save the duplicate there
+		// Find a unique name by appending " copy" or " copy 2", etc.
+		NSString *newFilename = [filename stringByAppendingString:@" copy"];
+		NSString *newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
+		int copyNumber = 2;
+		
+		while ([fileManager fileExistsAtPath:newPath]) {
+			newFilename = [NSString stringWithFormat:@"%@ copy %d", filename, copyNumber];
+			newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
+			copyNumber++;
+		}
+		
+		// Copy the file
+		NSError *copyError = nil;
+		BOOL success = [fileManager copyItemAtPath:[fileURL path] toPath:newPath error:&copyError];
+		
+		if (!success) {
+			return;
+		}
+		
+		// Open the duplicated document
+		NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
+		NSURL *newURL = [NSURL fileURLWithPath:newPath];
+		[documentController openDocumentWithContentsOfURL:newURL display:YES completionHandler:nil];
+		
+	} else {
+		// Directory is not writable, create an unsaved duplicate using temp file
+		NSString *newDisplayName = [[filename stringByAppendingString:@" copy"] stringByAppendingPathExtension:extension];
+		
+		// Create a unique temp directory
+		NSString *tempDir = NSTemporaryDirectory();
+		NSString *uniqueDir = [NSString stringWithFormat:@"ChocolatDuplicate_%d_%d", (int)[[NSDate date] timeIntervalSince1970], arc4random()];
+		NSString *tempSubDir = [tempDir stringByAppendingPathComponent:uniqueDir];
+		[fileManager createDirectoryAtPath:tempSubDir withIntermediateDirectories:YES attributes:nil error:nil];
+		
+		// Create temp file in the unique directory
+		NSString *tempFilename = [newDisplayName length] > 0 ? newDisplayName : @"Untitled";
+		NSString *tempPath = [tempSubDir stringByAppendingPathComponent:tempFilename];
+		NSURL *tempURL = [NSURL fileURLWithPath:tempPath];
+		
+		// Copy the file to temp location
+		NSError *copyError = nil;
+		BOOL success = [fileManager copyItemAtURL:fileURL toURL:tempURL error:&copyError];
+		
+		if (!success) {
+			// Clean up and return silently
+			[fileManager removeItemAtPath:tempSubDir error:nil];
+			return;
+		}
+		
+		// Open the temp file as a new document
+		NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
+		[documentController openDocumentWithContentsOfURL:tempURL display:YES completionHandler:^(NSDocument *document, BOOL documentWasAlreadyOpen, NSError *error) {
+			// Clean up temp files immediately
+			[fileManager removeItemAtURL:tempURL error:nil];
+			[fileManager removeItemAtPath:tempSubDir error:nil];
+			
+			if (!document || error) {
+				return;
+			}
+			
+			// Make document untitled
+			[document setFileURL:nil];
+			[document setFileType:[self fileType]];
+			[document setDisplayName:newDisplayName];
+			[document updateChangeCount:NSChangeDone];
+		}];
 	}
-	
-	// Copy the file
-	[fileManager copyItemAtPath:[fileURL path] toPath:newPath error:nil];
-	
-	// Open the duplicated document
-	NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
-	NSURL *newURL = [NSURL fileURLWithPath:newPath];
-	
-	// Open the new document
-	[documentController openDocumentWithContentsOfURL:newURL display:YES completionHandler:nil];
 }
 
 @end
@@ -148,27 +201,103 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHDocument, NSDocument);
 	NSString *extension = [fileURL pathExtension];
 	NSString *directory = [[fileURL path] stringByDeletingLastPathComponent];
 	
-	// Find a unique name by appending " copy" or " copy 2", etc.
-	NSString *newFilename = [filename stringByAppendingString:@" copy"];
-	NSString *newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
-	int copyNumber = 2;
-	
 	NSFileManager *fileManager = [NSFileManager defaultManager];
-	while ([fileManager fileExistsAtPath:newPath]) {
-		newFilename = [NSString stringWithFormat:@"%@ copy %d", filename, copyNumber];
-		newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
-		copyNumber++;
+	
+	// Check if we can write to the directory
+	BOOL canWriteToDirectory = [fileManager isWritableFileAtPath:directory];
+	
+	if (canWriteToDirectory) {
+		// Directory is writable, save the duplicate there
+		// Find a unique name by appending " copy" or " copy 2", etc.
+		NSString *newFilename = [filename stringByAppendingString:@" copy"];
+		NSString *newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
+		int copyNumber = 2;
+		
+		while ([fileManager fileExistsAtPath:newPath]) {
+			newFilename = [NSString stringWithFormat:@"%@ copy %d", filename, copyNumber];
+			newPath = [[directory stringByAppendingPathComponent:newFilename] stringByAppendingPathExtension:extension];
+			copyNumber++;
+		}
+		
+		// Copy the file
+		NSError *copyError = nil;
+		BOOL success = [fileManager copyItemAtPath:[fileURL path] toPath:newPath error:&copyError];
+		
+		if (!success) {
+			return;
+		}
+		
+		// Open the duplicated document
+		NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
+		NSURL *newURL = [NSURL fileURLWithPath:newPath];
+		[documentController openDocumentWithContentsOfURL:newURL display:YES completionHandler:nil];
+		
+	} else {
+		// Directory is not writable, create an unsaved duplicate using temp file
+		NSString *newDisplayName = [[filename stringByAppendingString:@" copy"] stringByAppendingPathExtension:extension];
+		
+		// Create a unique temp directory
+		NSString *tempDir = NSTemporaryDirectory();
+		NSString *uniqueDir = [NSString stringWithFormat:@"ChocolatDuplicate_%d_%d", (int)[[NSDate date] timeIntervalSince1970], arc4random()];
+		NSString *tempSubDir = [tempDir stringByAppendingPathComponent:uniqueDir];
+		[fileManager createDirectoryAtPath:tempSubDir withIntermediateDirectories:YES attributes:nil error:nil];
+		
+		// Create temp file in the unique directory
+		NSString *tempFilename = [newDisplayName length] > 0 ? newDisplayName : @"Untitled";
+		NSString *tempPath = [tempSubDir stringByAppendingPathComponent:tempFilename];
+		NSURL *tempURL = [NSURL fileURLWithPath:tempPath];
+		
+		// Copy the file to temp location
+		NSError *copyError = nil;
+		BOOL success = [fileManager copyItemAtURL:fileURL toURL:tempURL error:&copyError];
+		
+		if (!success) {
+			// Clean up and return silently
+			[fileManager removeItemAtPath:tempSubDir error:nil];
+			return;
+		}
+		
+		// Open the temp file as a new document
+		NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
+		[documentController openDocumentWithContentsOfURL:tempURL display:YES completionHandler:^(NSDocument *document, BOOL documentWasAlreadyOpen, NSError *error) {
+			// Clean up temp files immediately
+			[fileManager removeItemAtURL:tempURL error:nil];
+			[fileManager removeItemAtPath:tempSubDir error:nil];
+			
+			if (!document || error) {
+				return;
+			}
+			
+			// Make document untitled
+			[document setFileURL:nil];
+			[document setFileType:[self fileType]];
+			[document setDisplayName:newDisplayName];
+			[document updateChangeCount:NSChangeDone];
+		}];
+	}
+}
+
+@end
+
+EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHWindowController_Autosave, NSWindowController);
+@implementation ChocolatModifier_CHWindowController_Autosave
+
+// Override windowTitleForDocumentDisplayName to filter out temp paths
+- (NSString *)windowTitleForDocumentDisplayName:(NSString *)displayName {
+	// Get the original implementation result
+	NSString *title = ZKOrig(NSString *, displayName);
+	
+	// The original implementation formats as "displayName — projectName"
+	// Check if the title contains temp directory patterns
+	if ([title rangeOfString:@"ChocolatDuplicate_"].location != NSNotFound ||
+	    [title rangeOfString:@"/var/folders/"].location != NSNotFound ||
+	    [title rangeOfString:@"/tmp/"].location != NSNotFound ||
+	    [title rangeOfString:@"TemporaryItems"].location != NSNotFound) {
+		// If it contains temp paths, just return the display name without the project part
+		return displayName;
 	}
 	
-	// Copy the file
-	[fileManager copyItemAtPath:[fileURL path] toPath:newPath error:nil];
-	
-	// Open the duplicated document
-	NSDocumentController *documentController = [NSDocumentController sharedDocumentController];
-	NSURL *newURL = [NSURL fileURLWithPath:newPath];
-	
-	// Open the new document
-	[documentController openDocumentWithContentsOfURL:newURL display:YES completionHandler:nil];
+	return title;
 }
 
 @end
@@ -183,5 +312,6 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHDocument, NSDocument);
 	
 	ZKSwizzle(ChocolatModifier_CHSingleFileDocument, CHSingleFileDocument);
 	ZKSwizzle(ChocolatModifier_CHDocument, CHDocument);
+	ZKSwizzle(ChocolatModifier_CHWindowController_Autosave, CHWindowController);
 }
 @end
