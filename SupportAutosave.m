@@ -37,6 +37,30 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 	return;
 }
 
+- (void)saveToURL:(NSURL *)url ofType:(NSString *)typeName forSaveOperation:(NSSaveOperationType)saveOperation completionHandler:(void (^)(NSError *))completionHandler {
+	// Bypass OS X conflict detection, which causes deadlocks. Chocolat natively watches for changes.
+	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"]) {
+		NSError *error = nil;
+		NSData *data = [self dataOfType:typeName error:&error];
+		if (!data) {
+			if (completionHandler) completionHandler(error);
+			return;
+		}
+		
+		BOOL success = [data writeToURL:url atomically:YES];
+		if (!success) {
+			error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
+		} else {
+			[self updateChangeCount:NSChangeCleared];
+		}
+		
+		if (completionHandler) completionHandler(error);
+		return;
+	}
+	
+	ZKOrig(void, url, typeName, saveOperation, completionHandler);
+}
+
 // Hook the autosave completion to clear the dirty state
 - (void)autosaveWithImplicitCancellability:(BOOL)autosaveElsewhere completionHandler:(void (^)(NSError *))completionHandler {
 	// Check if we have the CHSaveOnDefocus preference enabled
