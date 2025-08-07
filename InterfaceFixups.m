@@ -309,11 +309,28 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHPreferencesController_RemoveTabs, NSO
 
 @end
 
+// -- Skip the Install Extras dialog and go directly to Install from File
+
+@interface NSObject (CHInstallExtrasController_Methods)
+- (void)installFromFile:(id)sender;
+@end
+
+EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHInstallExtrasController_DirectInstall, NSObject);
+@implementation ChocolatModifier_CHInstallExtrasController_DirectInstall
+
+- (void)showWindow:(id)sender {
+	// Skip showing the window and go directly to installFromFile
+	[self installFromFile:sender];
+}
+
+@end
+
 @implementation NSObject (ChocolatModifier_MenuFixups)
 + (void)load {
 	ZKSwizzle(ChocolatModifier_CHApplicationController_MenuFixups, CHApplicationController);
 	ZKSwizzle(ChocolatModifier_CHApplicationController_ValidateMenuItem, CHApplicationController);
 	ZKSwizzle(ChocolatModifier_CHEditorButtonBarFilenameComponent_HideSplitButton, CHEditorButtonBarFilenameComponent);
 	ZKSwizzle(ChocolatModifier_CHPreferencesController_RemoveTabs, CHPreferencesController);
+	ZKSwizzle(ChocolatModifier_CHInstallExtrasController_DirectInstall, CHInstallExtrasController);
 }
 @end
