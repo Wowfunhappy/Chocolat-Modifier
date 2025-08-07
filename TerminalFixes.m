@@ -319,9 +319,18 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 												ofItemAtPath:tempPath 
 													 error:nil];
 			
-			// Use terminalRunScript: which sets up all the Chocolat environment variables
 			SEL terminalRunScriptSelector = @selector(terminalRunScript:);
-			NSString *terminalCommand = ((NSString* (*)(id, SEL, NSString*))objc_msgSend)(self, terminalRunScriptSelector, tempPath);
+			NSString *originalCommand = ((NSString* (*)(id, SEL, NSString*))objc_msgSend)(self, terminalRunScriptSelector, tempPath);
+			
+			// Replace the problematic clear command with a proper one
+			// The original uses "clear; " which causes newline issues
+			// Replace with "clear && printf '\e[3J'; " which properly clears including scrollback
+			NSString *terminalCommand = [originalCommand stringByReplacingOccurrencesOfString:@"clear; " 
+																					withString:@"clear && printf '\\e[3J'; "];
+			
+			// Also remove the bell-style setting if present
+			terminalCommand = [terminalCommand stringByReplacingOccurrencesOfString:@"set bell-style none; " 
+																		   withString:@""];
 			
 			// Run in Terminal
 			SBApplication *terminal = [SBApplication applicationWithBundleIdentifier:@"com.apple.Terminal"];
