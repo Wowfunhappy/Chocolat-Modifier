@@ -23,6 +23,8 @@ clean:
 install: $(OUTPUT)
 	@echo "Installing ChocolatModifier.dylib to $(INSTALL_PATH)..."
 	@cp -f $(OUTPUT) "$(INSTALL_PATH)/"
+	@echo "Copying Help Book..."
+	@cp -rf ChocolatHelp "/Applications/Chocolat.app/Contents/Resources/" 2>/dev/null || true
 	@echo "Installation complete."
 
 .PHONY: all clean install

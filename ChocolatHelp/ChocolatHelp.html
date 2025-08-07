@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chocolat Help</title>
+    <meta name="AppleTitle" content="Chocolat Help">
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: -apple-system; padding: 20px; max-width: 850px; }
+        h1 { color: #333; }
+        h2 { color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; }
+        ul { line-height: 1.6; }
+        .shortcut { font-weight: bold; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    
+    <h2>Multiple Cursors</h2>
+    <p>Option-click to add a cursor. Option-click and drag to add a bunch of cursors.</p>
+    
+    <h2>Find/Replace</h2>
+    <ol>
+        <li><b>Expand</b> or collapse the extra options.</li>
+        <li>Toggle <b>regex</b> mode.</li>
+        <li>The string or regex to find.</li>
+        <li>Find <b>previous</b> occurrence.</li>
+        <li>Find <b>next</b> occurrence.</li>
+        <li>Replace string (or regex replace expression).</li>
+    </ol>
+    <ul>
+        <li><b>Replace</b> – Replace the currently selected text with the replace string/expression.</li>
+        <li><b>Replace All</b> – Replace all occurrences of the find expression with the replace string/expression.</li>
+        <li><b>Replace and Find</b> - Replace the currently selected text with the replace string and find another occurrence.</li>
+        <li><b>Wrap Around</b> – If no occurrences can be found after the selection, start the search from the beginning of the document.</li>
+        <li><b>Ignore Case</b> – Do a case-insensitive search.</li>
+        <li><b>Selected Text Only</b> – Restrict the search to the selected text.</li>
+    </ul>
+    <h3>Menu Items</h3>
+    <ul>
+        <li><b>⌘F</b> – Show the find bar.</li>
+        <li><b>⌘G</b> – Find the next occurrence.</li>
+        <li><b>⇧⌘G</b> – Show the previous occurrence.</li>
+        <li><b>⌘E</b> – Use selection for find. Open the find bar and put the currently selected text in it.</li>
+    </ul>
+    <h3>Regex Find/Replace</h3>
+    <p>Chocolat uses the <a href="https://github.com/kkos/oniguruma">Oniguruma</a> regex engine. This is the same engine that Ruby uses.</p>
+    <p>See <a href="https://raw.githubusercontent.com/kkos/oniguruma/65a9b1aa03c9bc2dc01b074295b9603232cb3b78/doc/RE">here</a> a description of Oniguruma's syntax.</p>
+    <p>To reference capturing groups, you can do <code>\n</code> or <code>$n</code>. For example, the third group is <code>\3</code> or <code>$3</code>.</p>
+
+    <h2>Clipboard History</h2>
+    <p>Access items that you copied previously and insert or copy them.</p>
+    <ol>
+        <li><b>Insert</b> the selected item in your text document.</li>
+        <li><b>Cancel</b> and close the window.</li>
+        <li><b>Copy</b> the selected item to the clipboard.</li>
+    </ol>
+    <h3>Keyboard Shortcuts</h3>
+    <ul>
+        <li>⇧⌘V – Load the clipboard history window.</li>
+        <li>Arrow Keys - Move up/down between items.</li>
+        <li>Enter - Select the currently highlighted item and close the window.</li>
+        <li>Escape - Close the window without selecting.</li>
+    </ul>
+
+    <h2>Code Completion</h2>
+    <p>Chocolat offers context-aware code completion through the use of three different strategies.</p>
+    <p><b>Word completion:</b> Words that are found in the current document. This happens when you press <b>esc</b>.</p>
+    <p><b>Indexed completions:</b> Symbols that are found in the current document or project. This is provided by diglett. Indexing support is not available for all languages.</p>
+    <p><b>Static completions:</b> Completions that have been pre-defined for the currently-selected language. These usually include functions, classes, and methods from the standard library of a language. The support files for these completions can be found <a href="https://github.com/fileability/choc-support/tree/master/completions">here</a>.</p>
+    
+    <h2>Vim Mode</h2>
+    <p>Chocolat has a Vim key-binding mode that can be turned on or off via the Edit > Vim Mode menu item, or by pressing ⌥⌘V.</p>
+    <p>A list of supported commands can be <a href="https://github.com/WarWithinMe/xVim/wiki/Supported-Commands">found here</a>.</p>
+
+    <h2>Project Bar</h2>
+    <p>The <b>Project Bar</b> lists all files in the current project.</p>
+    <p>Chocolat does not have a notion of "projects" <i>per se</i>. To Chocolat, a project is just a directory. And all non-untitled files have directories, and therefore projects.</p>
+    <p>Chocolat will try to guess whether a file is part of a "project" or not. One way it does this is to look for markers, such as <code>.git</code> directories. If it's sufficiently convinced, it will show the <b>Project Bar</b>.</p>
+
+    <h2>Status Bar</h2>
+    <p>The <b>Status Bar</b> shows relevant information about the current document. <b>Double-click</b> the status bar to edit it.</p>
+    <ul>
+        <li><b>Line Number</b>: the first selected line.</li>
+        <li><b>Column Index</b>: the number of characters from the start of the line to the cursor/selection. If the cursor is at the beginning of the line, the Column Index will be 0. If the cursor is at the end, it will be the length of the line.</li>
+        <li><b>Column Number</b>: the visual "column" number of the selected line. Interprets tabs as spanning multiple columns. This doesn't really make sense when used with proportional fonts or unicode.</li>
+        <li><b>Character Index</b>: the number of characters from the start of the <i>document</i> to the text cursor.</li>
+        <li><b>Selection Length</b>: the length of the currently selected region. Does not show if there is only a text cursor. If working in multicursor mode, this is the length of the "active" selection (usually the oldest selection).</li>
+        <li><b>Line Count</b>: the number of lines in the document.</li>
+        <li><b>Character Count</b>: the number of characters in the document.</li>
+        <li><b>Language Menu</b>: a popup menu allowing you to change the document's language.</li>
+        <li><b>Tab Size</b>: the visual width of a tab character. When in <i>soft tabs</i> mode, tab characters are inserted as a sequence of spaces.</li>
+        <li><b>File Encoding</b>: a popup menu to select which file encoding to <i>save</i> the document as.</li>
+        <li><b>Line Endings</b>: a popup menu to select which line endings to <i>save</i> the document with. "Mac OS Classic" line endings are provided merely as a historical curiosity and should not be used by any sane-minded person (or even an insane-minded one).</li>
+    </ul>
+    
+    <h2>Go → Go to File</h2>
+    <p>A quick way to jump to another file in the current project.</p>
+    <p>Without any search query, <b>Go to File</b> shows a list of recently opened files.</p>
+    <p>Searching is <i>fuzzy</i>: you can miss letters out. For example, to find <code>"ViewController.rb"</code> you could type <code>"ViewC"</code>, <code>"controller"</code>, or even <code>"wntllr"</code>. The more specific you are, the more likely the file you want will be first.</p>
+    <p>You may also search for complete paths (taken as relative to the project directory), rather than filenames. <code>"controllers/ViewController.rb"</code> is a valid query, as is <code>"ctrls/vctrl"</code>.</p>
+    <ul>
+        <li>To open the selected file, press enter.</li>
+        <li>To open the selected file in a split press ⌘-enter.</li>
+        <li>To open the selected file in a horizontal split, press ⌥⌘-enter.</li>
+    </ul>
+    
+    <h2>Edit → Find in Project</h2>
+    <p>Search an entire directory for a string.</p>
+    <ul>
+        <li><b>Ignore Case</b> – Do a case-insensitive search.</li>
+        <li><b>Whole Words</b> – Only search for whole word matches.</li>
+        <li><b>Regex</b> – Search using Perl-style regexes. If unchecked the search will be a literal search.</li>
+        <li><b>Recursive</b> – Search inside folders, folders-of-folders, etc.</li>
+        <li><b>Source Only</b> – Restrict searches to common source files.</li>
+    </ul>
+    
+    <h2>Actions → Install Extras...</h2>
+    <p>Chocolat can use TextMate bundles to add support for new languages. Select a .tmbundle to install it.</p>
+
+    <h2>Choc</h2>
+    <p><b><code>choc</code></b> is a command line utility that lets you use Chocolat like any other unix text editor.</p>
+    <p>To install, select <i>Chocolat menu → Install Command Line Tool…</i></p>
+    <p>Open the current directory in Chocolat as a project</p>
+    <pre> choc .</pre>
+    <p>Open a file in Chocolat</p>
+    <pre> choc helloworld.c</pre>
+    <p>Pipe some text to Chocolat and back</p>
+    <pre> echo "Hello World!" | choc | cat</pre>
+    <p>The <b><code>-a</code></b> option forces <b><code>choc</code></b> to end immediately, and not wait for output. Conversely, the <b><code>-w</code></b> option forces <b><code>choc</code></b> to wait until the file has been edited.</p>
+    
+    <h2>Mixins</h2>
+    <p>Mixins are plugins for Chocolat written in Javascript. To install a mixin, copy the .chocmixin into ~/Library/Application Support/Chocolat/Mixins.</p>
+    <p>The Mixin API Documentation is <a href="https://web.archive.org/web/20211128120225/http://mixins.chocolatapp.com/docs/" target="_blank">located here</a>. See an example mixin <a href="https://github.com/atg/hello-world.chocmixin" target="_blank">here</a>.</p>
+        
+    <h2>Directives</h2>
+        <p>New to Wowfunhappy's modified version of Chocolat, add directives at the top of a file to specify custom commands for Chocolat's run, build, debug, check, and REPL actions. Directives must appear within the first ten lines.</p>
+        <p>Example:</p>
+        <pre>
+// @build: clang "$CHOC_FILE" -o "$CHOC_FILENAME_NOEXT" -framework AppKit
+// @run: clang "$CHOC_FILE" -o "$CHOC_FILENAME_NOEXT" -framework AppKit && "./$CHOC_FILENAME_NOEXT"
+// @debug: clang "$CHOC_FILE" -o "$CHOC_FILENAME_NOEXT" -framework AppKit && lldb "./$CHOC_FILENAME_NOEXT"
+// @check: clang -fsyntax-only "$CHOC_FILE" -framework AppKit</pre>
+        <p>Available environment variables:</p>
+        <ul>
+            <li><code>$CHOC_FILE</code> - Full path to the current file</li>
+            <li><code>$CHOC_FILENAME</code> - Filename with extension</li>
+            <li><code>$CHOC_FILENAME_NOEXT</code> - Filename without extension</li>
+            <li><code>$CHOC_EXT</code> - File extension</li>
+            <li><code>$CHOC_FILE_DIR</code> - Directory containing the file</li>
+        </ul>
+        <p>A shebang line (e.g., <code>#!/usr/local/bin/python3</code>) will also override Chocolat's default run action if no <code>@run:</code> directive is present.</p>
+</body>
+</html>
