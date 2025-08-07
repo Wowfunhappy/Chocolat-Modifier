@@ -35,6 +35,18 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 		// Get the main menu
 		NSMenu *mainMenu = [NSApp mainMenu];
 		
+		// Rename menu items
+		for (NSMenuItem *menuItem in [mainMenu itemArray]) {
+			NSMenu *submenu = [menuItem submenu];
+			if (submenu) {
+				for (NSMenuItem *item in [submenu itemArray]) {
+					if ([[item title] isEqualToString:@"Reveal in Terminal"]) {
+						[item setTitle:@"Open in Terminal"];
+					}
+				}
+			}
+		}
+		
 		// Remove items from Chocolat menu
 		NSMenuItem *chocolatMenuItem = [mainMenu itemAtIndex:0];
 		NSMenu *chocolatMenu = [chocolatMenuItem submenu];
@@ -126,6 +138,21 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 		
 		// Remove the second to last item (duplicate separator)
 		[goMenu removeItemAtIndex:[[goMenu itemArray] count] - 3];
+		
+		// Remove Install Mixins from Actions menu
+		NSMenuItem *actionsMenuItem = [mainMenu itemWithTitle:@"Actions"];
+		if (actionsMenuItem) {
+			NSMenu *actionsMenu = [actionsMenuItem submenu];
+			NSMutableArray *actionsItemsToRemove = [NSMutableArray array];
+			for (NSMenuItem *item in [actionsMenu itemArray]) {
+				if ([item action] == @selector(openMixinInstaller:)) {
+					[actionsItemsToRemove addObject:item];
+				}
+			}
+			for (NSMenuItem *item in actionsItemsToRemove) {
+				[actionsMenu removeItem:item];
+			}
+		}
 		
 		// Remove Split menu items from File menu and rename "Close Window" to "Close"
 		NSMenuItem *fileMenuItem = [mainMenu itemWithTitle:@"File"];
