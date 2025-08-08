@@ -310,7 +310,15 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 				];
 			}
 			
-			NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@\n", setupEnv, actualCommand];
+			// Add cd to file directory if we have a file path (like Chocolat's built-in scripts do)
+			NSString *cdCommand = @"";
+			if (filePath) {
+				NSString *fileDir = [filePath stringByDeletingLastPathComponent];
+				cdCommand = [NSString stringWithFormat:@"cd '%@'\n", 
+					[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
+			}
+			
+			NSString *scriptContent = [NSString stringWithFormat:@"#!/bin/bash\n%@%@%@\n", setupEnv, cdCommand, actualCommand];
 			NSError *writeError = nil;
 			[scriptContent writeToFile:tempPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
 			
@@ -353,8 +361,17 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 				// Small delay to let the tab initialize
 				[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
 				
-				// Add cd to file directory if we have a file path
-				if (filePath) {
+				// Add cd to project directory if available, otherwise file directory
+				NSString *projectDir = nil;
+				SEL rootDirSelector = @selector(rootDirectory);
+				if ([document respondsToSelector:rootDirSelector]) {
+					projectDir = ((NSString* (*)(id, SEL))objc_msgSend)(document, rootDirSelector);
+				}
+				if (projectDir) {
+					NSString *cdCommand = [NSString stringWithFormat:@"cd '%@'; history -d $(history 1 | awk '{print $1}')", 
+						[projectDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
+					[terminal doScript:cdCommand in:tab];
+				} else if (filePath) {
 					NSString *fileDir = [filePath stringByDeletingLastPathComponent];
 					NSString *cdCommand = [NSString stringWithFormat:@"cd '%@'; history -d $(history 1 | awk '{print $1}')", 
 						[fileDir stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"]];
