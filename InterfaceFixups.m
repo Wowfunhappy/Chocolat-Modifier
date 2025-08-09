@@ -372,5 +372,9 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHInstallExtrasController_DirectInstall
 	ZKSwizzle(ChocolatModifier_CHEditorButtonBarFilenameComponent_HideSplitButton, CHEditorButtonBarFilenameComponent);
 	ZKSwizzle(ChocolatModifier_CHPreferencesController_RemoveTabs, CHPreferencesController);
 	ZKSwizzle(ChocolatModifier_CHInstallExtrasController_DirectInstall, CHInstallExtrasController);
+	
+	// Disable Chocolat's crash reporting since the original developers are gone.
+	[[NSUserDefaults standardUserDefaults] removeObjectForKey:@"KOLastChecked"];
+	[[NSUserDefaults standardUserDefaults] synchronize];
 }
 @end
