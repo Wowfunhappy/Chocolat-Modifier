@@ -83,13 +83,19 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			}
 		}
 		
-		NSInteger scaleIndex = [windowMenu indexOfItem:scaleMenuItem];
-		[windowMenu removeItem:scaleMenuItem];
-		
-		// Remove separator that was below Scale
-		[windowMenu removeItemAtIndex:scaleIndex];
-		
-		[viewMenu insertItem:scaleMenuItem atIndex:10];
+		if (scaleMenuItem) {
+			NSInteger scaleIndex = [windowMenu indexOfItem:scaleMenuItem];
+			[windowMenu removeItem:scaleMenuItem];
+			
+			// Remove separator that was below Scale if it exists
+			if (scaleIndex < [[windowMenu itemArray] count]) {
+				[windowMenu removeItemAtIndex:scaleIndex];
+			}
+			
+			// Insert at a safe position in view menu
+			NSInteger viewInsertIndex = MIN(10, [[viewMenu itemArray] count]);
+			[viewMenu insertItem:scaleMenuItem atIndex:viewInsertIndex];
+		}
 		
 		// Remove Documentation and Web Preview from View menu
 		NSMutableArray *viewItemsToRemove = [NSMutableArray array];
@@ -115,11 +121,13 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			}
 		}
 		
-		[viewMenu removeItem:fullScreenItem];
-		
-		// Add separator and full screen at bottom
-		[viewMenu addItem:[NSMenuItem separatorItem]];
-		[viewMenu addItem:fullScreenItem];
+		if (fullScreenItem) {
+			[viewMenu removeItem:fullScreenItem];
+			
+			// Add separator and full screen at bottom
+			[viewMenu addItem:[NSMenuItem separatorItem]];
+			[viewMenu addItem:fullScreenItem];
+		}
 		
 		// Remove Jump to Documentation, Next Split, and Previous Split from Go menu
 		NSMutableArray *goItemsToRemove = [NSMutableArray array];
@@ -136,8 +144,10 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			[goMenu removeItem:item];
 		}
 		
-		// Remove the second to last item (duplicate separator)
-		[goMenu removeItemAtIndex:[[goMenu itemArray] count] - 3];
+		// Remove the second to last item (duplicate separator) if menu has enough items
+		if ([[goMenu itemArray] count] >= 3) {
+			[goMenu removeItemAtIndex:[[goMenu itemArray] count] - 3];
+		}
 		
 		// Remove Install Mixins from Actions menu
 		NSMenuItem *actionsMenuItem = [mainMenu itemWithTitle:@"Actions"];
@@ -171,11 +181,14 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			[fileMenu removeItem:item];
 		}
 		
-		[fileMenu insertItem:[NSMenuItem separatorItem] atIndex:18];
+		// Insert separator at safe position
+		NSInteger fileSeparatorIndex = MIN(18, [[fileMenu itemArray] count]);
+		[fileMenu insertItem:[NSMenuItem separatorItem] atIndex:fileSeparatorIndex];
 
 		NSMenuItem *openInNewWindowItem = [[NSMenuItem alloc] initWithTitle:@"Open in New Window" action:@selector(openInNewWindow:) keyEquivalent:@""];
 		[openInNewWindowItem setTarget:self];
-		[fileMenu insertItem:openInNewWindowItem atIndex:22];
+		NSInteger fileItemIndex = MIN(22, [[fileMenu itemArray] count]);
+		[fileMenu insertItem:openInNewWindowItem atIndex:fileItemIndex];
 
 		// Fix Help menu
 		NSMenuItem *helpMenuItem = [mainMenu itemWithTitle:@"Help"];
