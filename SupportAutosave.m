@@ -47,10 +47,23 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 			return;
 		}
 		
+		BOOL hadFileURL = ([self fileURL] != nil);
 		BOOL success = [data writeToURL:url atomically:YES];
 		if (!success) {
 			error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
 		} else {
+			// Always update the fileURL if it wasn't set before
+			if (!hadFileURL) {
+				[self setFileURL:url];
+				
+				// Force synchronize the window title after setting the URL
+				dispatch_async(dispatch_get_main_queue(), ^{
+					NSWindowController *windowController = [[self windowForSheet] windowController];
+					if (windowController && [windowController respondsToSelector:@selector(synchronizeWindowTitleWithDocumentName)]) {
+						[windowController performSelector:@selector(synchronizeWindowTitleWithDocumentName)];
+					}
+				});
+			}
 			[self updateChangeCount:NSChangeCleared];
 		}
 		
