@@ -144,6 +144,14 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			[goMenu removeItem:item];
 		}
 		
+		// Remove "Go to Action..." from Go menu
+		for (NSMenuItem *item in [goMenu itemArray]) {
+			if ([[item title] rangeOfString:@"Go to Action"].location != NSNotFound) {
+				[goMenu removeItem:item];
+				break;
+			}
+		}
+		
 		// Remove the second to last item (duplicate separator) if menu has enough items
 		if ([[goMenu itemArray] count] >= 3) {
 			[goMenu removeItemAtIndex:[[goMenu itemArray] count] - 3];
@@ -423,6 +431,22 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHInstallExtrasController_DirectInstall
 
 @end
 
+// -- Hide the mode switcher button in the action panel (Go to File dialog)
+
+EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHActionPanelController_HideModeSwitcher, NSObject);
+@implementation ChocolatModifier_CHActionPanelController_HideModeSwitcher
+
+- (void)awakeFromNib {
+	// Call original implementation
+	ZKOrig(void);
+	
+	// Hide the mode switcher button (the "Files" button that allows switching to Actions)
+	NSButton *modeSwitcherButton = [self valueForKey:@"modeSwitcherButton"];
+	[modeSwitcherButton setHidden:YES];
+}
+
+@end
+
 @implementation NSObject (ChocolatModifier_MenuFixups)
 + (void)load {
 	ZKSwizzle(ChocolatModifier_CHApplicationController_MenuFixups, CHApplicationController);
@@ -430,6 +454,7 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHInstallExtrasController_DirectInstall
 	ZKSwizzle(ChocolatModifier_CHEditorButtonBarFilenameComponent_HideSplitButton, CHEditorButtonBarFilenameComponent);
 	ZKSwizzle(ChocolatModifier_CHPreferencesController_RemoveTabs, CHPreferencesController);
 	ZKSwizzle(ChocolatModifier_CHInstallExtrasController_DirectInstall, CHInstallExtrasController);
+	ZKSwizzle(ChocolatModifier_CHActionPanelController_HideModeSwitcher, CHActionPanelController);
 	
 	// Disable Chocolat's crash reporting since the original developers are gone.
 	[[NSUserDefaults standardUserDefaults] removeObjectForKey:@"KOLastChecked"];
