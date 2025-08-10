@@ -21,6 +21,8 @@ int main(int argc, const char * argv[]) {
  * In addition, a shabang line will also take precedence over Chocolat's default run action.
  * (However, a run directive within the file takes precedence over a shabang line.)
  * 
+ * Also disables Action menu items when there's no script, directive, or shebang available.
+ * 
  */
 
 
@@ -28,6 +30,7 @@ int main(int argc, const char * argv[]) {
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import "ZKSwizzle/ZKSwizzle.h"
 
 @interface CHSingleFileDocument : NSDocument
 - (NSString *)stringValue;
@@ -68,6 +71,9 @@ int main(int argc, const char * argv[]) {
 
 
 @interface RunChanges : NSObject
+@end
+
+@interface MenuValidation_CHBuildController : NSObject
 @end
 
 static IMP originalRunScriptNamed = NULL;
@@ -148,6 +154,39 @@ static NSString* extractActionCommand(NSString *content, NSString *actionName) {
 	}
 	
 	return nil;
+}
+
+// Helper function to check if an action is available (has script, directive, or shebang)
+static BOOL isActionAvailable(NSString *scriptName, NSString *actionName, CHSingleFileDocument *document) {
+	if (!document) return NO;
+	
+	// Check if there's a native script for this action
+	Class buildControllerClass = NSClassFromString(@"CHBuildController");
+	NSString *scriptPath = [buildControllerClass getFullPathForScript:scriptName document:document];
+	
+	// Check if the script actually exists
+	if (scriptPath && [scriptPath length] > 0) {
+		NSFileManager *fm = [NSFileManager defaultManager];
+		if ([fm fileExistsAtPath:scriptPath]) {
+			return YES;
+		}
+	}
+	
+	// No native script - check for directives or shebang
+	NSString *content = [document stringValue];
+	if (!content) return NO;
+	
+	// Check for directive
+	if (extractActionCommand(content, actionName)) {
+		return YES;
+	}
+	
+	// Check for shebang (only for run action)
+	if ([actionName isEqualToString:@"run"] && [content hasPrefix:@"#!"]) {
+		return YES;
+	}
+	
+	return NO;
 }
 
 static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
@@ -450,9 +489,11 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 	}
 }
 
+
 @implementation RunChanges
 
 + (void)load {
+	// Hook the runScriptNamed method after a delay (needs the class to be loaded)
 	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0), dispatch_get_main_queue(), ^{
 		Class buildController = NSClassFromString(@"CHBuildController");
 		Method method = class_getInstanceMethod(buildController, @selector(runScriptNamed:));
@@ -462,3 +503,49 @@ static void swizzled_runScriptNamed(id self, SEL _cmd, NSString *scriptName) {
 }
 
 @end
+
+@implementation MenuValidation_CHBuildController
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+	SEL action = [menuItem action];
+	NSString *scriptName = nil;
+	NSString *actionName = nil;
+	
+	if (action == @selector(run:)) {
+		scriptName = @"run.sh";
+		actionName = @"run";
+	} else if (action == @selector(build:)) {
+		scriptName = @"build.sh";
+		actionName = @"build";
+	} else if (action == @selector(debug:)) {
+		scriptName = @"debug.sh";
+		actionName = @"debug";
+	} else if (action == @selector(check:)) {
+		scriptName = @"check.sh";
+		actionName = @"check";
+	} else if (action == @selector(repl:)) {
+		scriptName = @"repl.sh";
+		actionName = @"repl";
+	}
+	
+	// If it's not an action we care about, return YES
+	if (!scriptName) {
+		return YES;
+	}
+	
+	// Get the current document
+	NSDocumentController *docController = [NSDocumentController sharedDocumentController];
+	CHSingleFileDocument *document = (CHSingleFileDocument *)[docController currentDocument];
+	
+	// Check if action is available
+	BOOL shouldEnable = isActionAvailable(scriptName, actionName, document);
+	return shouldEnable;
+}
+
+@end
+
+__attribute__((constructor))
+static void initialize_menu_validation() {
+	// Hook CHBuildController to implement validateMenuItem for Actions menu items
+	ZKSwizzle(MenuValidation_CHBuildController, CHBuildController);
+}
