@@ -149,19 +149,77 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHApplicationController_MenuFixups, NSO
 			[goMenu removeItemAtIndex:[[goMenu itemArray] count] - 3];
 		}
 		
-		// Remove Install Mixins from Actions menu
+		// Reorganize Actions and Language menus
 		NSMenuItem *actionsMenuItem = [mainMenu itemWithTitle:@"Actions"];
+		NSMenuItem *textMenuItem = [mainMenu itemWithTitle:@"Text"];
+		
 		if (actionsMenuItem) {
-			NSMenu *actionsMenu = [actionsMenuItem submenu];
-			NSMutableArray *actionsItemsToRemove = [NSMutableArray array];
-			for (NSMenuItem *item in [actionsMenu itemArray]) {
-				if ([item action] == @selector(openMixinInstaller:)) {
-					[actionsItemsToRemove addObject:item];
+			// Rename current "Actions" menu to "Language"
+			[actionsMenuItem setTitle:@"Language"];
+			NSMenu *languageMenu = [actionsMenuItem submenu];
+			[languageMenu setTitle:@"Language"];
+			
+			// Find and move "Choose Language..." from Text menu to top of Language menu
+			if (textMenuItem) {
+				NSMenu *textMenu = [textMenuItem submenu];
+				NSMenuItem *chooseLanguageItem = nil;
+				for (NSMenuItem *item in [textMenu itemArray]) {
+					if ([item action] == @selector(chooseLanguage:)) {
+						chooseLanguageItem = item;
+						break;
+					}
+				}
+				if (chooseLanguageItem) {
+					[textMenu removeItem:chooseLanguageItem];
+					[languageMenu insertItem:chooseLanguageItem atIndex:0];
+					[languageMenu insertItem:[NSMenuItem separatorItem] atIndex:1];
+				}
+				
+				// Remove the first item (leading separator) from Text menu
+				if ([[textMenu itemArray] count] > 0) {
+					[textMenu removeItemAtIndex:0];
 				}
 			}
-			for (NSMenuItem *item in actionsItemsToRemove) {
-				[actionsMenu removeItem:item];
+			
+			// Create new Actions menu
+			NSMenuItem *newActionsMenuItem = [[NSMenuItem alloc] initWithTitle:@"Action" action:nil keyEquivalent:@""];
+			NSMenu *newActionsMenu = [[NSMenu alloc] initWithTitle:@"Action"];
+			[newActionsMenuItem setSubmenu:newActionsMenu];
+			
+			// Find position of Language menu and insert new Actions menu after it
+			NSInteger languageIndex = [mainMenu indexOfItem:actionsMenuItem];
+			[mainMenu insertItem:newActionsMenuItem atIndex:languageIndex + 1];
+			
+			// Move Run, REPL, Build, Debug, and Check from Language menu to new Actions menu
+			NSArray *actionsToMove = @[@"Run", @"REPL", @"Build", @"Debug", @"Check"];
+			NSMutableArray *itemsToMove = [NSMutableArray array];
+			NSMutableArray *separatorsToMove = [NSMutableArray array];
+			
+			for (NSMenuItem *item in [languageMenu itemArray]) {
+				if ([actionsToMove containsObject:[item title]]) {
+					[itemsToMove addObject:item];
+				}
 			}
+			
+			// Move the items to new Actions menu
+			for (NSMenuItem *item in itemsToMove) {
+				[languageMenu removeItem:item];
+				[newActionsMenu addItem:item];
+			}
+			
+			// Remove Install Mixins from Language menu
+			NSMutableArray *languageItemsToRemove = [NSMutableArray array];
+			for (NSMenuItem *item in [languageMenu itemArray]) {
+				if ([item action] == @selector(openMixinInstaller:)) {
+					[languageItemsToRemove addObject:item];
+				}
+			}
+			for (NSMenuItem *item in languageItemsToRemove) {
+				[languageMenu removeItem:item];
+			}
+			
+			// Remove consecutive seperator Language menu
+			[languageMenu removeItemAtIndex:6];
 		}
 		
 		// Remove Split menu items from File menu and rename "Close Window" to "Close"
