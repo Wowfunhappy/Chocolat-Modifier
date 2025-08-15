@@ -9,6 +9,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <sys/stat.h>
 #import "ZKSwizzle/ZKSwizzle.h"
 #define EMPTY_SWIZZLE_INTERFACE(CLASS_NAME, SUPERCLASS) @interface CLASS_NAME : SUPERCLASS @end
 
@@ -48,10 +49,23 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 		}
 		
 		BOOL hadFileURL = ([self fileURL] != nil);
+		
+		NSString *path = [url path];
+		
 		BOOL success = [data writeToURL:url atomically:YES];
 		if (!success) {
 			error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
 		} else {
+			// Clear invisible flag after save - workaround for SMB bug
+			if (path) {
+				struct stat st;
+				if (stat([path UTF8String], &st) == 0) {
+					if (st.st_flags & UF_HIDDEN) {
+						chflags([path UTF8String], st.st_flags & ~UF_HIDDEN);
+					}
+				}
+			}
+			
 			// Always update the fileURL if it wasn't set before
 			if (!hadFileURL) {
 				[self setFileURL:url];
