@@ -17,20 +17,11 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 @implementation ChocolatModifier_CHSingleFileDocument
 
 + (BOOL)autosavesInPlace {
-    // Check if we're being called from within a close operation
-    // by examining the call stack for CHClosingContext
-    NSArray *callStack = [NSThread callStackSymbols];
-    for (NSString *symbol in callStack) {
-        if ([symbol rangeOfString:@"CHClosingContext"].location != NSNotFound) {
-            // If we're in a closing context, return NO to avoid the freeze
-            return NO;
-        }
-    }
     return [[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"];
 }
 
-+ (BOOL)autosavesDrafts {
-    return NO;
+- (BOOL)hasUnautosavedChanges {
+	return NO;
 }
 
 - (void)presentedItemDidChange {
@@ -38,54 +29,45 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 	return;
 }
 
-- (void)saveToURL:(NSURL *)url ofType:(NSString *)typeName forSaveOperation:(NSSaveOperationType)saveOperation completionHandler:(void (^)(NSError *))completionHandler {
-	// Bypass OS X conflict detection, which causes deadlocks. Chocolat natively watches for changes.
+- (void)relinquishPresentedItemToWriter:(void (^)(void (^reacquirer)(void)))writer {
+	// Prevent deadlock by executing the writer block immediately without coordination
+	// This is safe because Chocolat handles file change detection natively
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"]) {
-		NSError *error = nil;
-		NSData *data = [self dataOfType:typeName error:&error];
-		if (!data) {
-			if (completionHandler) completionHandler(error);
-			return;
-		}
-		
-		BOOL hadFileURL = ([self fileURL] != nil);
-		
-		NSString *path = [url path];
-		
-		BOOL success = [data writeToURL:url atomically:YES];
-		if (!success) {
-			error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
-		} else {
-			// Clear invisible flag after save - workaround for SMB bug
-			if (path) {
-				struct stat st;
-				if (stat([path UTF8String], &st) == 0) {
-					if (st.st_flags & UF_HIDDEN) {
-						chflags([path UTF8String], st.st_flags & ~UF_HIDDEN);
-					}
-				}
-			}
-			
-			// Always update the fileURL if it wasn't set before
-			if (!hadFileURL) {
-				[self setFileURL:url];
-				
-				// Force synchronize the window title after setting the URL
-				dispatch_async(dispatch_get_main_queue(), ^{
-					NSWindowController *windowController = [[self windowForSheet] windowController];
-					if (windowController && [windowController respondsToSelector:@selector(synchronizeWindowTitleWithDocumentName)]) {
-						[windowController performSelector:@selector(synchronizeWindowTitleWithDocumentName)];
-					}
-				});
-			}
-			[self updateChangeCount:NSChangeCleared];
-		}
-		
-		if (completionHandler) completionHandler(error);
-		return;
+		writer(^{
+			// Reacquirer - no-op since we handle changes ourselves
+		});
+	} else {
+		ZKOrig(void, writer);
 	}
-	
-	ZKOrig(void, url, typeName, saveOperation, completionHandler);
+}
+
+- (NSFileCoordinator *)_fileCoordinator:(NSFileCoordinator *)fc coordinateReadingContentsAndWritingItemAtURL:(NSURL *)url byAccessor:(void (^)(NSURL *))accessor {
+	// Skip file coordination for autosave to prevent deadlock
+	// This allows document versioning to work while avoiding the coordination deadlock
+	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"]) {
+		// Call the accessor directly without coordination
+		accessor(url);
+		return fc;
+	}
+	return ZKOrig(NSFileCoordinator *, fc, url, accessor);
+}
+
+- (BOOL)revertToContentsOfURL:(NSURL *)url ofType:(NSString *)typeName error:(NSError **)outError {
+	// Call original implementation
+	BOOL result = ZKOrig(BOOL, url, typeName, outError);
+
+	// If revert succeeded and autosave is enabled, update file modification date
+	// This prevents "modified by another application" errors after external changes
+	if (result && [[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"]) {
+		// Get the actual file modification date from disk
+		NSDictionary *fileAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:[url path] error:nil];
+		NSDate *modDate = [fileAttributes fileModificationDate];
+		if (modDate) {
+			[self setFileModificationDate:modDate];
+		}
+	}
+
+	return result;
 }
 
 // Hook the autosave completion to clear the dirty state
