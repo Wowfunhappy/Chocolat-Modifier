@@ -17,6 +17,14 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 @implementation ChocolatModifier_CHSingleFileDocument
 
 + (BOOL)autosavesInPlace {
+    NSArray *callStack = [NSThread callStackSymbols];
+    for (NSString *symbol in callStack) {
+        if ([symbol rangeOfString:@"NSPersistentUIManager"].location != NSNotFound) {
+            // This seems to prevent freezes. Not entirely clear why.
+	    return NO;
+        }
+    }
+    //NSLog(@"autosavesInPlace Call Stack: %@", callStack);
     return [[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"];
 }
 
@@ -39,17 +47,6 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 	} else {
 		ZKOrig(void, writer);
 	}
-}
-
-- (NSFileCoordinator *)_fileCoordinator:(NSFileCoordinator *)fc coordinateReadingContentsAndWritingItemAtURL:(NSURL *)url byAccessor:(void (^)(NSURL *))accessor {
-	// Skip file coordination for autosave to prevent deadlock
-	// This allows document versioning to work while avoiding the coordination deadlock
-	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"CHSaveOnDefocus"]) {
-		// Call the accessor directly without coordination
-		accessor(url);
-		return fc;
-	}
-	return ZKOrig(NSFileCoordinator *, fc, url, accessor);
 }
 
 - (BOOL)revertToContentsOfURL:(NSURL *)url ofType:(NSString *)typeName error:(NSError **)outError {
@@ -210,6 +207,7 @@ EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHSingleFileDocument, NSDocument);
 }
 
 @end
+
 
 EMPTY_SWIZZLE_INTERFACE(ChocolatModifier_CHDocument, NSDocument);
 @implementation ChocolatModifier_CHDocument
